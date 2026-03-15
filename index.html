@@ -1,18 +1,108 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
-<title>Mystery Board</title>
-
-<link rel="stylesheet" href="style.css">
-
+<meta charset="UTF-8">
+<title>Obsidian Canvas Viewer</title>
+<style>
+  body { margin:0; overflow:hidden; font-family:sans-serif; background:#1e1e1e; }
+  #canvas { position:relative; width:100vw; height:100vh; }
+  .node {
+    position:absolute;
+    padding:10px;
+    background:#282828;
+    color:white;
+    border:1px solid #555;
+    border-radius:6px;
+    box-shadow:0 2px 5px rgba(0,0,0,0.5);
+    cursor:grab;
+    min-width:80px;
+  }
+  .node img {
+    max-width:150px;
+    display:block;
+    margin-top:5px;
+  }
+  svg { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; }
+</style>
 </head>
-
 <body>
+<div id="canvas"></div>
+<svg id="links"></svg>
 
-<div id="board"></div>
+<script>
+// Helper: make a node draggable
+function makeDraggable(el) {
+  let offsetX, offsetY, dragging=false;
+  el.addEventListener('mousedown', e => {
+    dragging=true;
+    offsetX = e.offsetX;
+    offsetY = e.offsetY;
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    el.style.left = (e.pageX - offsetX) + 'px';
+    el.style.top = (e.pageY - offsetY) + 'px';
+    updateLines();
+  });
+  document.addEventListener('mouseup', e => dragging=false);
+}
 
-<script src="viewer.js"></script>
+let nodes = [];
+let links = [];
+const canvasDiv = document.getElementById('canvas');
+const svg = document.getElementById('links');
 
+function updateLines() {
+  svg.innerHTML = '';
+  links.forEach(l => {
+    const start = nodes.find(n => n.id===l.source);
+    const end = nodes.find(n => n.id===l.target);
+    if (!start || !end) return;
+    const line = document.createElementNS("http://www.w3.org/2000/svg","line");
+    const startRect = start.div.getBoundingClientRect();
+    const endRect = end.div.getBoundingClientRect();
+    line.setAttribute('x1', startRect.left + startRect.width/2);
+    line.setAttribute('y1', startRect.top + startRect.height/2);
+    line.setAttribute('x2', endRect.left + endRect.width/2);
+    line.setAttribute('y2', endRect.top + endRect.height/2);
+    line.setAttribute('stroke','#888');
+    line.setAttribute('stroke-width','2');
+    svg.appendChild(line);
+  });
+}
+
+// Load the canvas JSON
+fetch('mycanvas.canvas')
+  .then(res => res.json())
+  .then(data => {
+    // Create nodes
+    data.nodes.forEach(n => {
+      const div = document.createElement('div');
+      div.className = 'node';
+      div.style.left = n.x + 'px';
+      div.style.top = n.y + 'px';
+      div.textContent = n.name || n.id;
+
+      // Optional image
+      if (n.image) {
+        const img = document.createElement('img');
+        img.src = 'assets/' + n.image;
+        div.appendChild(img);
+      }
+
+      canvasDiv.appendChild(div);
+      makeDraggable(div);
+
+      nodes.push({id:n.id, div});
+    });
+
+    // Save links
+    links = data.links || [];
+
+    // Initial draw
+    updateLines();
+    window.addEventListener('resize', updateLines);
+  });
+</script>
 </body>
 </html>
