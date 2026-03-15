@@ -1,108 +1,209 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Obsidian Canvas Viewer</title>
-<style>
-  body { margin:0; overflow:hidden; font-family:sans-serif; background:#1e1e1e; }
-  #canvas { position:relative; width:100vw; height:100vh; }
-  .node {
-    position:absolute;
-    padding:10px;
-    background:#282828;
-    color:white;
-    border:1px solid #555;
-    border-radius:6px;
-    box-shadow:0 2px 5px rgba(0,0,0,0.5);
-    cursor:grab;
-    min-width:80px;
-  }
-  .node img {
-    max-width:150px;
-    display:block;
-    margin-top:5px;
-  }
-  svg { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Investigation Board: The Mystery of ThothDaddy</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #1e1e1e;
+            --node-bg: #2d2d2d;
+            --text-color: #dcddde;
+            --border-color: #444;
+            --accent: #e29e1f;
+        }
+
+        body, html {
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Segoe UI', sans-serif;
+            overflow: hidden;
+        }
+
+        #canvas-container {
+            width: 100vw; height: 100vh;
+            cursor: grab;
+            position: relative;
+        }
+
+        #canvas {
+            position: absolute;
+            transform-origin: 0 0;
+            will-change: transform;
+        }
+
+        .node {
+            position: absolute;
+            background: var(--node-bg);
+            border: 2px solid var(--border-color);
+            border-radius: 6px;
+            padding: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            font-size: 13px;
+            overflow-y: auto;
+        }
+
+        /* Obsidian Color Palette */
+        .color-1 { border-color: #e94b3c; } /* Red */
+        .color-2 { border-color: #e29e1f; } /* Orange */
+        .color-3 { border-color: #31b44a; } /* Green */
+        .color-4 { border-color: #24808a; } /* Cyan */
+        .color-5 { border-color: #a352cc; } /* Purple */
+        .color-6 { border-color: #e4377d; } /* Pink */
+
+        svg {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        line {
+            stroke: #555;
+            stroke-width: 2;
+            stroke-linecap: round;
+        }
+
+        #ui-overlay {
+            position: fixed;
+            top: 20px; left: 20px;
+            background: rgba(0,0,0,0.7);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid var(--accent);
+            z-index: 100;
+        }
+
+        .loading {
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            color: var(--accent);
+        }
+    </style>
 </head>
 <body>
-<div id="canvas"></div>
-<svg id="links"></svg>
+
+<div id="ui-overlay">
+    <strong>Investigation Board</strong><br>
+    <small>Scroll to Zoom | Drag to Pan</small>
+</div>
+
+<div id="loader" class="loading">Analyzing Crime Scene Data...</div>
+
+<div id="canvas-container">
+    <div id="canvas">
+        <svg id="edge-layer"></svg>
+        <div id="node-layer"></div>
+    </div>
+</div>
 
 <script>
-// Helper: make a node draggable
-function makeDraggable(el) {
-  let offsetX, offsetY, dragging=false;
-  el.addEventListener('mousedown', e => {
-    dragging=true;
-    offsetX = e.offsetX;
-    offsetY = e.offsetY;
-  });
-  document.addEventListener('mousemove', e => {
-    if (!dragging) return;
-    el.style.left = (e.pageX - offsetX) + 'px';
-    el.style.top = (e.pageY - offsetY) + 'px';
-    updateLines();
-  });
-  document.addEventListener('mouseup', e => dragging=false);
-}
+    const canvas = document.getElementById('canvas');
+    const nodeLayer = document.getElementById('node-layer');
+    const edgeLayer = document.getElementById('edge-layer');
+    const loader = document.getElementById('loader');
 
-let nodes = [];
-let links = [];
-const canvasDiv = document.getElementById('canvas');
-const svg = document.getElementById('links');
+    let scale = 0.3;
+    let translateX = window.innerWidth / 2;
+    let translateY = window.innerHeight / 2;
 
-function updateLines() {
-  svg.innerHTML = '';
-  links.forEach(l => {
-    const start = nodes.find(n => n.id===l.source);
-    const end = nodes.find(n => n.id===l.target);
-    if (!start || !end) return;
-    const line = document.createElementNS("http://www.w3.org/2000/svg","line");
-    const startRect = start.div.getBoundingClientRect();
-    const endRect = end.div.getBoundingClientRect();
-    line.setAttribute('x1', startRect.left + startRect.width/2);
-    line.setAttribute('y1', startRect.top + startRect.height/2);
-    line.setAttribute('x2', endRect.left + endRect.width/2);
-    line.setAttribute('y2', endRect.top + endRect.height/2);
-    line.setAttribute('stroke','#888');
-    line.setAttribute('stroke-width','2');
-    svg.appendChild(line);
-  });
-}
+    async function init() {
+        try {
+            // Fetches the Mystery.canvas file from the same directory
+            const response = await fetch('Mystery.canvas');
+            if (!response.ok) throw new Error('Could not find Mystery.canvas');
+            const data = await response.json();
+            
+            loader.style.display = 'none';
+            render(data);
+        } catch (err) {
+            loader.innerText = 'Error: ' + err.message;
+        }
+    }
 
-// Load the canvas JSON
-fetch('Mystery.canvas')
-  .then(res => res.json())
-  .then(data => {
-    // Create nodes
-    data.nodes.forEach(n => {
-      const div = document.createElement('div');
-      div.className = 'node';
-      div.style.left = n.x + 'px';
-      div.style.top = n.y + 'px';
-      div.textContent = n.name || n.id;
+    function render(data) {
+        // Render Nodes
+        data.nodes.forEach(node => {
+            const div = document.createElement('div');
+            div.className = `node color-${node.color || ''}`;
+            div.style.left = `${node.x}px`;
+            div.style.top = `${node.y}px`;
+            div.style.width = `${node.width}px`;
+            div.style.height = `${node.height}px`;
 
-      // Optional image
-      if (n.image) {
-        const img = document.createElement('img');
-        img.src = 'assets/' + n.image;
-        div.appendChild(img);
-      }
+            if (node.color && node.color.startsWith('#')) {
+                div.style.borderColor = node.color;
+            }
 
-      canvasDiv.appendChild(div);
-      makeDraggable(div);
+            const content = node.text || `📄 **File:** ${node.file}`;
+            div.innerHTML = marked.parse(content);
+            nodeLayer.appendChild(div);
+        });
 
-      nodes.push({id:n.id, div});
+        // Render Edges
+        data.edges.forEach(edge => {
+            const from = data.nodes.find(n => n.id === edge.fromNode);
+            const to = data.nodes.find(n => n.id === edge.toNode);
+            if (!from || !to) return;
+
+            const start = getSideCoords(from, edge.fromSide);
+            const end = getSideCoords(to, edge.toSide);
+
+            const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            line.setAttribute("x1", start.x);
+            line.setAttribute("y1", start.y);
+            line.setAttribute("x2", end.x);
+            line.setAttribute("y2", end.y);
+            if (edge.color) line.style.stroke = edge.color;
+            edgeLayer.appendChild(line);
+        });
+
+        updateTransform();
+    }
+
+    function getSideCoords(n, side) {
+        if (side === 'top') return { x: n.x + n.width/2, y: n.y };
+        if (side === 'bottom') return { x: n.x + n.width/2, y: n.y + n.height };
+        if (side === 'left') return { x: n.x, y: n.y + n.height/2 };
+        if (side === 'right') return { x: n.x + n.width, y: n.y + n.height/2 };
+        return { x: n.x + n.width/2, y: n.y + n.height/2 };
+    }
+
+    // Controls
+    function updateTransform() {
+        canvas.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+    }
+
+    window.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        scale *= delta;
+        updateTransform();
+    }, { passive: false });
+
+    let isDragging = false, startX, startY;
+    window.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        startX = e.clientX - translateX;
+        startY = e.clientY - translateY;
     });
 
-    // Save links
-    links = data.links || [];
+    window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        translateX = e.clientX - startX;
+        translateY = e.clientY - startY;
+        updateTransform();
+    });
 
-    // Initial draw
-    updateLines();
-    window.addEventListener('resize', updateLines);
-  });
+    window.addEventListener('mouseup', () => isDragging = false);
+
+    init();
 </script>
 </body>
 </html>
