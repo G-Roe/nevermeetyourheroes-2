@@ -1,0 +1,20 @@
+body {
+  margin:0;
+  font-family:sans-serif;
+  background:#111;
+}
+
+#board {
+  position:relative;
+  width:100vw;
+  height:100vh;
+}
+
+.node {
+  position:absolute;
+  background:white;
+  border-radius:6px;
+  padding:10px;
+  border:1px solid #aaa;
+  width:240px;
+}
