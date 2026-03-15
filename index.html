@@ -7,10 +7,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
     <style>
         :root {
-            --bg-color: #1e1e1e;
-            --node-bg: #2d2d2d;
-            --text-color: #dcddde;
-            --border-color: #444;
+            --bg-color: #0f0f0f;
+            --node-bg: #1a1a1a;
+            --text-color: #e0e0e0;
             --accent: #e29e1f;
         }
 
@@ -19,7 +18,7 @@
             width: 100%; height: 100%;
             background-color: var(--bg-color);
             color: var(--text-color);
-            font-family: 'Segoe UI', sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             overflow: hidden;
         }
 
@@ -38,63 +37,60 @@
         .node {
             position: absolute;
             background: var(--node-bg);
-            border: 2px solid var(--border-color);
-            border-radius: 6px;
+            border: 1px solid #333;
+            border-radius: 4px;
             padding: 12px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.6);
             font-size: 13px;
             overflow-y: auto;
+            z-index: 2;
         }
 
-        /* Obsidian Color Palette */
-        .color-1 { border-color: #e94b3c; } /* Red */
-        .color-2 { border-color: #e29e1f; } /* Orange */
-        .color-3 { border-color: #31b44a; } /* Green */
-        .color-4 { border-color: #24808a; } /* Cyan */
-        .color-5 { border-color: #a352cc; } /* Purple */
-        .color-6 { border-color: #e4377d; } /* Pink */
+        /* Obsidian Color System */
+        .color-1 { border: 2px solid #e94b3c; } .color-2 { border: 2px solid #e29e1f; }
+        .color-3 { border: 2px solid #31b44a; } .color-4 { border: 2px solid #24808a; }
+        .color-5 { border: 2px solid #a352cc; } .color-6 { border: 2px solid #e4377d; }
 
-        svg {
+        .node img {
+            max-width: 100%;
+            height: auto;
+            margin: 8px 0;
+            border-radius: 4px;
+            border: 1px solid #444;
+        }
+
+        svg#edge-layer {
             position: absolute;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
+            top: -10000px; left: -10000px;
+            width: 20000px; height: 20000px;
             pointer-events: none;
-            z-index: -1;
+            z-index: 1;
         }
 
-        line {
-            stroke: #555;
+        path.edge-line {
+            stroke: #666;
             stroke-width: 2;
-            stroke-linecap: round;
+            fill: none;
+            opacity: 0.6;
         }
 
-        #ui-overlay {
+        #ui {
             position: fixed;
-            top: 20px; left: 20px;
-            background: rgba(0,0,0,0.7);
-            padding: 15px;
-            border-radius: 8px;
-            border: 1px solid var(--accent);
+            top: 20px; right: 20px;
+            background: rgba(0,0,0,0.8);
+            padding: 10px 15px;
+            border-radius: 6px;
+            border: 1px solid #444;
             z-index: 100;
-        }
-
-        .loading {
-            position: fixed;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 24px;
-            color: var(--accent);
         }
     </style>
 </head>
 <body>
 
-<div id="ui-overlay">
+<div id="ui">
     <strong>Investigation Board</strong><br>
-    <small>Scroll to Zoom | Drag to Pan</small>
+    <small>Double-click to zoom in | Drag to Pan</small>
 </div>
-
-<div id="loader" class="loading">Analyzing Crime Scene Data...</div>
 
 <div id="canvas-container">
     <div id="canvas">
@@ -107,7 +103,6 @@
     const canvas = document.getElementById('canvas');
     const nodeLayer = document.getElementById('node-layer');
     const edgeLayer = document.getElementById('edge-layer');
-    const loader = document.getElementById('loader');
 
     let scale = 0.3;
     let translateX = window.innerWidth / 2;
@@ -115,59 +110,78 @@
 
     async function init() {
         try {
-            // Fetches the Mystery.canvas file from the same directory
             const response = await fetch('Mystery.canvas');
-            if (!response.ok) throw new Error('Could not find Mystery.canvas');
             const data = await response.json();
             
-            loader.style.display = 'none';
-            render(data);
-        } catch (err) {
-            loader.innerText = 'Error: ' + err.message;
+            // Render basic structure
+            await renderNodes(data.nodes);
+            renderEdges(data.edges, data.nodes);
+            
+            // Center the view on the crime scene
+            centerOnNode("-3018", "-2660"); 
+        } catch (e) {
+            console.error("Initialization error:", e);
         }
     }
 
-    function render(data) {
-        // Render Nodes
-        data.nodes.forEach(node => {
+    async function renderNodes(nodes) {
+        for (const node of nodes) {
             const div = document.createElement('div');
             div.className = `node color-${node.color || ''}`;
+            div.id = `node-${node.id}`;
             div.style.left = `${node.x}px`;
             div.style.top = `${node.y}px`;
             div.style.width = `${node.width}px`;
             div.style.height = `${node.height}px`;
 
-            if (node.color && node.color.startsWith('#')) {
-                div.style.borderColor = node.color;
+            if (node.type === 'text') {
+                div.innerHTML = marked.parse(node.text);
+            } else if (node.type === 'file') {
+                // Fetch the .md file content
+                try {
+                    const fileResp = await fetch(node.file);
+                    let content = await fileResp.text();
+                    
+                    // Parse Obsidian ![[image.jpg]] syntax
+                    content = content.replace(/!\[\[(.*?)\]\]/g, (match, fileName) => {
+                        return `<img src="${fileName}" alt="${fileName}">`;
+                    });
+
+                    div.innerHTML = `<strong>${node.file.split('/').pop()}</strong><hr>` + marked.parse(content);
+                } catch (e) {
+                    div.innerHTML = `<strong>File:</strong> ${node.file}<br><em>(Content missing)</em>`;
+                }
             }
-
-            const content = node.text || `📄 **File:** ${node.file}`;
-            div.innerHTML = marked.parse(content);
             nodeLayer.appendChild(div);
-        });
-
-        // Render Edges
-        data.edges.forEach(edge => {
-            const from = data.nodes.find(n => n.id === edge.fromNode);
-            const to = data.nodes.find(n => n.id === edge.toNode);
-            if (!from || !to) return;
-
-            const start = getSideCoords(from, edge.fromSide);
-            const end = getSideCoords(to, edge.toSide);
-
-            const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-            line.setAttribute("x1", start.x);
-            line.setAttribute("y1", start.y);
-            line.setAttribute("x2", end.x);
-            line.setAttribute("y2", end.y);
-            if (edge.color) line.style.stroke = edge.color;
-            edgeLayer.appendChild(line);
-        });
-
-        updateTransform();
+        }
     }
 
-    function getSideCoords(n, side) {
+    function renderEdges(edges, nodes) {
+        edges.forEach(edge => {
+            const from = nodes.find(n => n.id === edge.fromNode);
+            const to = nodes.find(n => n.id === edge.toNode);
+            if (!from || !to) return;
+
+            const start = getAnchor(from, edge.fromSide);
+            const end = getAnchor(to, edge.toSide);
+
+            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            path.setAttribute("class", "edge-line");
+            
+            // Simple straight line path
+            const d = `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+            path.setAttribute("d", d);
+            
+            if (edge.color) {
+                // Map Obsidian edge colors to hex if needed
+                path.style.stroke = edge.color.length > 2 ? edge.color : '#888';
+            }
+            
+            edgeLayer.appendChild(path);
+        });
+    }
+
+    function getAnchor(n, side) {
         if (side === 'top') return { x: n.x + n.width/2, y: n.y };
         if (side === 'bottom') return { x: n.x + n.width/2, y: n.y + n.height };
         if (side === 'left') return { x: n.x, y: n.y + n.height/2 };
@@ -175,7 +189,13 @@
         return { x: n.x + n.width/2, y: n.y + n.height/2 };
     }
 
-    // Controls
+    function centerOnNode(x, y) {
+        translateX = (window.innerWidth / 2) - (x * scale);
+        translateY = (window.innerHeight / 2) - (y * scale);
+        updateTransform();
+    }
+
+    // Interaction Logic
     function updateTransform() {
         canvas.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
     }
@@ -188,19 +208,17 @@
     }, { passive: false });
 
     let isDragging = false, startX, startY;
-    window.addEventListener('mousedown', (e) => {
+    window.addEventListener('mousedown', e => {
         isDragging = true;
         startX = e.clientX - translateX;
         startY = e.clientY - translateY;
     });
-
-    window.addEventListener('mousemove', (e) => {
+    window.addEventListener('mousemove', e => {
         if (!isDragging) return;
         translateX = e.clientX - startX;
         translateY = e.clientY - startY;
         updateTransform();
     });
-
     window.addEventListener('mouseup', () => isDragging = false);
 
     init();
